@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Major</title>
+<meta name="description" content="Turn any numbered list into a memorable peg list using the Major System, with vivid mnemonics built on the Vivid-Active-Memory framework. Nothing you type leaves your browser.">
+<!--
+  Memory Major - self-contained study tool.
+  One file: HTML + CSS + JS, no build step, no dependencies, no backend.
+  Guided mode only (peg word + VAM prompts, the user writes the mnemonic).
+  A generation seam (generateMnemonic) is stubbed so an Auto/LLM mode can be
+  added later without restructuring. All state is in localStorage under the
+  page origin. Ships identically to aschcapital.com (/app/) and to Rootwise
+  (/public/tools/), shown in a same-origin iframe on both.
+-->
+<style>
+  :root {
+    --bg: #f7f4ee;
+    --surface: #ffffff;
+    --surface-2: #faf8f3;
+    --ink: #14231d;
+    --slate: #5c6b64;
+    --line: #e4ddd0;
+    --accent: #1f4d3a;
+    --accent-soft: #1f4d3a14;
+    --sprout: #4ea674;
+    --clay: #c47a4a;
+    --warn: #b06b2c;
+    --ok: #2f7d55;
+    --radius: 12px;
+    --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-serif: "Fraunces", "Source Serif 4", Georgia, serif;
+    --shadow: 0 8px 24px rgba(20, 35, 29, 0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1613;
+      --surface: #16211c;
+      --surface-2: #131d18;
+      --ink: #e8efe9;
+      --slate: #9db0a6;
+      --line: #26332c;
+      --accent: #63c78e;
+      --accent-soft: #63c78e1f;
+      --sprout: #63c78e;
+      --clay: #e0a06f;
+      --warn: #e0a06f;
+      --ok: #63c78e;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 28px 20px 72px; }
+  h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  a { color: var(--accent); }
+  .lede { color: var(--slate); margin: 0 0 20px; max-width: 62ch; }
+  .muted { color: var(--slate); }
+  .small { font-size: 13px; }
+  .mono { font-variant-numeric: tabular-nums; }
+
+  button, .btn {
+    font: inherit; cursor: pointer; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); padding: 8px 16px;
+    transition: background .12s ease, border-color .12s ease, transform .06s ease;
+  }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 500; }
+  @media (prefers-color-scheme: dark) { .btn-primary { color: #0f1613; } }
+  .btn-primary:hover { filter: brightness(1.05); border-color: var(--accent); }
+  .btn-ghost { background: transparent; }
+  .btn-sm { padding: 4px 10px; font-size: 13px; }
+  .btn-danger:hover { border-color: var(--clay); color: var(--clay); }
+
+  textarea, input[type=text], input[type=number] {
+    font: inherit; width: 100%; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
+  }
+  textarea:focus, input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 200px; line-height: 1.5; }
+  textarea.mnem-input { min-height: 64px; }
+  label { font-size: 13px; color: var(--slate); display: block; margin: 0 0 6px; }
+
+  .row-gap { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .between { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .drop {
+    border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 14px;
+    text-align: center; color: var(--slate); font-size: 14px; margin-top: 12px; transition: border-color .12s, background .12s;
+  }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* segmented mode toggle */
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 7px 16px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { .seg button.on { color: #0f1613; } }
+
+  /* confirm table */
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--slate); font-weight: 600; }
+  td .numin { width: 68px; text-align: center; }
+  .dup { color: var(--clay); font-weight: 600; }
+
+  /* workspace rows */
+  .item { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item-head { display: flex; align-items: baseline; gap: 12px; }
+  .numbadge {
+    font-family: var(--font-serif); font-size: 15px; font-weight: 600; min-width: 30px; height: 30px;
+    display: inline-flex; align-items: center; justify-content: center; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent); padding: 0 6px;
+  }
+  .peg-chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px;
+    cursor: help; white-space: nowrap;
+  }
+  .peg-chip .k { color: var(--slate); font-weight: 400; }
+  .item-title { font-weight: 600; font-size: 16px; flex: 1; min-width: 0; }
+  .item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  .guided { margin-top: 12px; }
+  .prompts { display: grid; gap: 6px; margin: 4px 0 10px; }
+  .prompt { font-size: 13px; color: var(--slate); padding-left: 20px; position: relative; }
+  .prompt b { color: var(--ink); }
+  .prompt::before { content: ""; position: absolute; left: 6px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .mnem-view { line-height: 1.55; }
+  .mnem-view b { color: var(--accent); }
+  .mnem-empty { color: var(--slate); font-style: italic; }
+
+  .vam { display: inline-flex; gap: 6px; margin-top: 8px; }
+  .vam .pill {
+    font-size: 11px; font-weight: 600; letter-spacing: .03em; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--slate); background: var(--surface-2); cursor: help;
+  }
+  .vam .pill.pass { color: #fff; background: var(--ok); border-color: var(--ok); }
+  @media (prefers-color-scheme: dark) { .vam .pill.pass { color: #0f1613; } }
+  .vam .pill.warn { color: var(--warn); border-color: var(--warn); background: transparent; }
+
+  .toolbar { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; margin: -8px 0 16px; border-bottom: 1px solid var(--line); }
+  .badgecount { font-size: 13px; color: var(--slate); }
+
+  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); max-width: 640px; width: calc(100% - 32px); padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  .dlg-body { padding: 22px 24px; max-height: 78vh; overflow: auto; }
+  .dict-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .dict-row .n { font-weight: 600; color: var(--slate); text-align: right; }
+  .dict-row input { padding: 6px 10px; }
+  .dict-note { font-size: 12px; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50; }
+  .toast.show { opacity: 1; }
+
+  .hint { font-size: 13px; color: var(--slate); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
+  .hidden { display: none !important; }
+  .disclaimer { margin-top: 40px; font-size: 12px; color: var(--slate); border-top: 1px solid var(--line); padding-top: 16px; }
+  @media print {
+    .toolbar, .item-actions, .guided textarea, .drop, .no-print { display: none !important; }
+    body { background: #fff; color: #000; }
+    .card { box-shadow: none; border-color: #ccc; }
+  }
+  @media (max-width: 560px) {
+    .item-head { flex-wrap: wrap; }
+    .item-title { flex-basis: 100%; order: 3; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ INPUT SCREEN ============ -->
+  <section id="screen-input">
+    <h1>Memory Major</h1>
+    <p class="lede">Paste a numbered list. Every number gets its permanent <b>Major System</b> peg word,
+      and you build one vivid, moving mental image that fuses the peg with the idea. Memorize the pegs once,
+      reuse them forever. Nothing you type leaves your browser.</p>
+
+    <label for="input">Your list</label>
+    <textarea id="input" placeholder="1. Markets for Goods &amp; Services
+2. Scarcity
+3. Opportunity Cost
+...
+(or paste plain lines and they'll be numbered for you)"></textarea>
+
+    <div id="drop" class="drop">Drop a .md, .txt or .csv file here, or
+      <label style="display:inline; color:var(--accent); cursor:pointer; text-decoration:underline;">browse<input id="file" type="file" accept=".md,.txt,.csv,text/*" class="hidden"></label>
+    </div>
+
+    <div class="between" style="margin-top:16px;">
+      <div class="row-gap">
+        <span class="small muted">Mode</span>
+        <div class="seg" id="mode-seg" role="tablist" aria-label="Writing mode">
+          <button data-mode="guided" class="on" title="You write the mnemonic with the peg word and prompts in front of you">Guided</button>
+          <button data-mode="auto" disabled title="Auto writing needs an AI connection, which is not enabled in this build. Guided mode is fully offline.">Auto (soon)</button>
+        </div>
+      </div>
+      <div class="row-gap">
+        <button id="load-sample" class="btn-ghost btn-sm">Try an example</button>
+        <button id="to-confirm" class="btn-primary">Continue &rarr;</button>
+      </div>
+    </div>
+    <p id="input-err" class="small" style="color:var(--clay); margin-top:10px;"></p>
+  </section>
+
+  <!-- ============ CONFIRM SCREEN ============ -->
+  <section id="screen-confirm" class="hidden">
+    <div class="between">
+      <h1>Check the list</h1>
+      <button id="back-input" class="btn-ghost btn-sm">&larr; Edit text</button>
+    </div>
+    <p class="lede">Fix any mis-parsed rows before generating. The peg comes from the true number, so a list
+      that starts at 16 still gets peg 16 (dish). Edit an item, change a number, add or delete a row.</p>
+    <div id="confirm-warn" class="hint hidden"></div>
+    <div class="card" style="overflow:hidden;">
+      <table>
+        <thead><tr><th style="width:80px;">Number</th><th>Item</th><th style="width:44px;"></th></tr></thead>
+        <tbody id="confirm-body"></tbody>
+      </table>
+    </div>
+    <div class="between" style="margin-top:14px;">
+      <button id="add-row" class="btn-ghost btn-sm">+ Add row</button>
+      <button id="to-workspace" class="btn-primary">These look right &rarr; Build pegs</button>
+    </div>
+  </section>
+
+  <!-- ============ WORKSPACE SCREEN ============ -->
+  <section id="screen-workspace" class="hidden">
+    <div class="toolbar">
+      <div class="between">
+        <div class="row-gap">
+          <strong id="ws-title">Peg list</strong>
+          <span class="badgecount" id="ws-count"></span>
+        </div>
+        <div class="row-gap no-print">
+          <button id="btn-copy" class="btn-sm">Copy</button>
+          <button id="btn-export" class="btn-sm">Export .md</button>
+          <button id="btn-print" class="btn-sm">Print</button>
+          <button id="btn-dict" class="btn-sm">Dictionary</button>
+          <button id="btn-new" class="btn-sm btn-danger">New list</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="ws-body"></div>
+    <p class="disclaimer">A study aid. The Major System maps digits to consonant sounds; the peg words are the
+      classic imageable defaults, editable in the Dictionary. Everything runs and saves locally in this browser.</p>
+  </section>
+
+</div>
+
+<!-- Dictionary dialog -->
+<dialog id="dict-dialog">
+  <div class="dlg-body">
+    <div class="between" style="margin-bottom:6px;">
+      <h2 style="margin:0;">Peg dictionary</h2>
+      <button id="dict-close" class="btn-sm btn-ghost">Close</button>
+    </div>
+    <p class="small muted">The peg for each number is fixed so you can reuse it across every list. Override any word
+      to your taste; overrides are saved and reused. The check tells you whether your word still matches the number's sounds.</p>
+    <div class="between" style="margin:10px 0;">
+      <input id="dict-filter" type="text" placeholder="Filter by number or word..." style="max-width:260px;">
+      <button id="dict-reset" class="btn-sm">Reset all to defaults</button>
+    </div>
+    <div id="dict-list"></div>
+  </div>
+</dialog>
+
+<div id="toast" class="toast"></div>
+
+<script>
+"use strict";
+(function () {
+
+  /* =====================================================================
+     1. Major System core: digit -> sound map, peg dictionary, encoding
+     ===================================================================== */
+  var SOUND_MAP = {
+    0: "s, z, soft c",
+    1: "t, d, th",
+    2: "n",
+    3: "m",
+    4: "r",
+    5: "l",
+    6: "j, sh, ch, soft g",
+    7: "k, hard c, g, q",
+    8: "f, v",
+    9: "p, b"
+  };
+
+  // Appendix B - shipped defaults 0..100, chosen for imageability.
+  var DEFAULT_PEGS = {
+    0:"saw",1:"tie",2:"Noah",3:"Ma",4:"rye",5:"law",6:"shoe",7:"cow",8:"ivy",9:"bee",
+    10:"toes",11:"tots",12:"tin",13:"Tom",14:"tire",15:"tool",16:"dish",17:"tack",18:"dove",19:"tub",
+    20:"nose",21:"net",22:"nun",23:"name",24:"Nero",25:"nail",26:"notch",27:"neck",28:"knife",29:"knob",
+    30:"mouse",31:"mat",32:"moon",33:"mummy",34:"mower",35:"mule",36:"match",37:"mug",38:"movie",39:"mop",
+    40:"rose",41:"rod",42:"rain",43:"ram",44:"rower",45:"rail",46:"roach",47:"rock",48:"roof",49:"rope",
+    50:"lace",51:"lot",52:"lion",53:"lime",54:"lure",55:"lily",56:"leech",57:"log",58:"leaf",59:"lip",
+    60:"cheese",61:"sheet",62:"chain",63:"chime",64:"chair",65:"jail",66:"judge",67:"chalk",68:"chef",69:"ship",
+    70:"case",71:"cat",72:"can",73:"comb",74:"car",75:"coal",76:"cage",77:"cake",78:"cave",79:"cape",
+    80:"face",81:"feet",82:"fan",83:"foam",84:"fire",85:"file",86:"fish",87:"fog",88:"fife",89:"fob",
+    90:"bus",91:"bat",92:"bun",93:"bomb",94:"bear",95:"bell",96:"beach",97:"book",98:"beef",99:"pipe",
+    100:"daisies"
+  };
+
+  // digits of a number -> the "why" (each digit with its sound group)
+  function whyFor(n) {
+    var s = String(n).split("");
+    return s.map(function (d) { return d + " = " + SOUND_MAP[+d]; }).join("  ·  ");
+  }
+  // required consonant-digit skeleton for a number, e.g. 16 -> "16"
+  function skeletonFor(n) { return String(n); }
+
+  // Approximate word -> digit string, for validating a user's peg override.
+  // Guidance only (spec 4.2/10: warn but always allow), so it need not be perfect.
+  function wordToDigits(word) {
+    var w = (word || "").toLowerCase().replace(/[^a-z]/g, "");
+    // collapse doubled identical letters (double letters = one sound)
+    w = w.replace(/([a-z])\1+/g, "$1");
+    var out = [], i = 0;
+    function isVowelNext(c) { return c !== "" && "eiy".indexOf(c) !== -1; }
+    while (i < w.length) {
+      var c = w[i], c2 = w[i + 1] || "", pair = c + c2;
+      var tri = c + c2 + (w[i + 2] || "");
+      if (tri === "tch") { out.push(6); i += 3; continue; }         // silent t
+      if (i === 0 && pair === "kn") { i += 1; continue; }           // silent leading k
+      if (c === "b" && i === w.length - 1 && w[i - 1] === "m") { i += 1; continue; } // silent final b (comb, bomb)
+      if (pair === "ch" || pair === "sh" || pair === "dg") { out.push(6); i += 2; continue; }
+      if (pair === "th") { out.push(1); i += 2; continue; }
+      if (pair === "ph") { out.push(8); i += 2; continue; }
+      if (pair === "ck") { out.push(7); i += 2; continue; }
+      switch (c) {
+        case "s": case "z": out.push(0); break;
+        case "c": out.push(isVowelNext(c2) ? 0 : 7); break;
+        case "t": case "d": out.push(1); break;
+        case "n": out.push(2); break;
+        case "m": out.push(3); break;
+        case "r": out.push(4); break;
+        case "l": out.push(5); break;
+        case "j": out.push(6); break;
+        case "g": out.push(isVowelNext(c2) ? 6 : 7); break;
+        case "k": case "q": out.push(7); break;
+        case "f": case "v": out.push(8); break;
+        case "p": case "b": out.push(9); break;
+        case "x": out.push(7); out.push(0); break;
+        default: break; // vowels, w, h, y = filler
+      }
+      i++;
+    }
+    return out.join("");
+  }
+
+  /* =====================================================================
+     2. State + persistence (localStorage)
+     ===================================================================== */
+  var STORE_KEY = "memoryMajor.v1";
+  var state = loadState();
+
+  function defaultState() {
+    return { overrides: {}, settings: { defaultMode: "guided" }, current: null };
+  }
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return defaultState();
+      var s = JSON.parse(raw);
+      s.overrides = s.overrides || {};
+      s.settings = s.settings || { defaultMode: "guided" };
+      return s;
+    } catch (e) { return defaultState(); }
+  }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // resolve peg for a number: user override wins, else default, else null (>100 unset)
+  function pegFor(n) {
+    if (state.overrides[n] != null && state.overrides[n] !== "") return state.overrides[n];
+    if (DEFAULT_PEGS[n] != null) return DEFAULT_PEGS[n];
+    return null;
+  }
+
+  /* =====================================================================
+     3. Parser (spec 4.1)
+     ===================================================================== */
+  function parseList(text) {
+    var lines = text.replace(/\r\n?/g, "\n").split("\n");
+    var items = [];
+    var autoNum = 0, sawExplicit = false, autoNumbered = false;
+
+    for (var li = 0; li < lines.length; li++) {
+      var raw = lines[li];
+      var line = raw.trim();
+      if (!line) continue;
+      // ignore markdown headings and separators
+      if (/^#{1,6}\s/.test(line)) continue;
+      if (/^([-*_=])\1{2,}$/.test(line.replace(/\s/g, ""))) continue;
+      // ignore an exported "*Mnemonic:*" continuation line
+      var deco = line.replace(/^[-*+]\s*/, "");
+      if (/^\*?mnemonic:\*?/i.test(deco)) continue;
+
+      // strip a leading bullet, then look for an explicit number
+      var body = line.replace(/^[-*+]\s+/, "");
+      var m = body.match(/^\*{0,2}\s*(\d{1,3})\s*[.)\-:]\s+(.*)$/) ||
+              body.match(/^\*{0,2}\s*(\d{1,3})\s+[.)\-:]\s*(.*)$/);
+      var num, itemText, wasBold = false;
+      if (m) {
+        sawExplicit = true;
+        num = parseInt(m[1], 10);
+        itemText = m[2];
+        wasBold = /^\*{2}/.test(body);
+      } else {
+        // bare line -> auto-number
+        autoNum += 1;
+        num = autoNum;
+        itemText = body;
+        autoNumbered = true;
+      }
+      items.push({ number: num, item: cleanItem(itemText, wasBold) });
+    }
+    // keep autoNum in step with the largest explicit number so mixed lists don't collide
+    return { items: items, autoNumbered: autoNumbered && !sawExplicit ? true : autoNumbered };
+  }
+
+  // strip markdown decoration and, for our own bold export lines, a trailing "(Peg)"
+  function cleanItem(t, wasBold) {
+    t = t.trim();
+    // strip surrounding/inner emphasis markers
+    t = t.replace(/\*\*/g, "").replace(/(^|[^*])\*(?!\*)/g, "$1").replace(/`/g, "").trim();
+    // our export wraps the numbered line in ** ** and appends " (Peg)"; drop that suffix
+    if (wasBold) t = t.replace(/\s*\([^()]{1,20}\)\s*$/, "").trim();
+    return t;
+  }
+
+  function parseCSV(text) {
+    var lines = text.replace(/\r\n?/g, "\n").split("\n").filter(function (l) { return l.trim(); });
+    var items = [], auto = 0, twoCol = false;
+    // detect two columns by a comma-separated first data line with a numeric first field
+    for (var i = 0; i < lines.length; i++) {
+      var cols = splitCsvLine(lines[i]);
+      if (cols.length >= 2 && /^\s*\d{1,3}\s*$/.test(cols[0])) {
+        twoCol = true;
+        items.push({ number: parseInt(cols[0], 10), item: cleanItem(cols.slice(1).join(", "), false) });
+      } else {
+        auto += 1;
+        items.push({ number: auto, item: cleanItem(cols.join(", "), false) });
+      }
+    }
+    return { items: items, autoNumbered: !twoCol };
+  }
+  function splitCsvLine(line) {
+    var out = [], cur = "", q = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i];
+      if (ch === '"') { q = !q; }
+      else if (ch === "," && !q) { out.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map(function (s) { return s.trim(); });
+  }
+
+  /* =====================================================================
+     4. VAM quality heuristics (spec 4.4) - pass/warn guidance
+     ===================================================================== */
+  var SENSORY = /\b(giant|huge|tiny|massive|enormous|bright|neon|glowing|crimson|scarlet|golden|silver|red|blue|green|yellow|orange|purple|pink|black|white|loud|screaming|deafening|silent|smell|stench|reek|fragrant|slimy|sticky|freezing|burning|scorching|icy|towering|colossal|blinding|shimmering|sparkling|steaming|smoking|rotten|sweet|sour|bitter|thunderous|blazing)\b/i;
+  var STRONG_VERB = /\b(smash|smashes|crash|crashes|explode|explodes|explod\w+|devour|devours|chase|chases|slam|slams|hurl|hurls|rip|rips|tear|tears|crush|crushes|squeeze|squeezes|launch\w*|throw\w*|kick\w*|punch\w*|swallow\w*|shatter\w*|erupt\w*|blast\w*|drag\w*|wrap\w*|bite\w*|bites|stomp\w*|grab\w*|catapult\w*|slice\w*|spew\w*|shoot\w*|melt\w*|drill\w*|topple\w*|juggl\w*|spin\w*|dance\w*|ride\w*|rides|climb\w*|pour\w*|flood\w*|burst\w*)\b/i;
+  var STATIC_ONLY = /\b(is|are|was|were|sits|sit|stands|stand|next to|near|beside|is a|there is)\b/i;
+
+  function checkVAM(text, itemText) {
+    var t = (text || "").trim();
+    if (!t) return { vivid: false, active: false, memory: false };
+    var vivid = SENSORY.test(t) || (t.match(/\b\w+ly\b/g) || []).length >= 1 && /\b(bright|dark|huge|loud|fast)\w*/i.test(t) || countAdjectiveish(t) >= 2;
+    var active = STRONG_VERB.test(t);
+    // memory: at least one meaningful word from the item appears in the mnemonic
+    var keys = keyWords(itemText);
+    var lower = t.toLowerCase();
+    var memory = keys.length === 0 || keys.some(function (k) { return lower.indexOf(k) !== -1; });
+    return { vivid: !!vivid, active: !!active, memory: !!memory };
+  }
+  function countAdjectiveish(t) { return (t.match(SENSORY) ? 1 : 0) + ((t.match(/\b(colou?rful|shiny|massive|violent|vivid|wild|crazy|fierce)\b/i)) ? 1 : 0); }
+  var STOP = {the:1,a:1,an:1,of:1,for:1,and:1,or:1,to:1,in:1,on:1,with:1,"&":1,"vs":1,by:1,at:1,as:1,is:1,its:1,your:1,my:1};
+  function keyWords(itemText) {
+    return (itemText || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+      .filter(function (w) { return w.length >= 4 && !STOP[w]; })
+      .map(function (w) { return w.replace(/(ies|s)$/, ""); }) // crude singularize for matching
+      .filter(Boolean).slice(0, 6);
+  }
+
+  /* =====================================================================
+     5. Generation seam - Guided only in this build.
+        Auto mode would implement generateMnemonic() to call an LLM proxy.
+     ===================================================================== */
+  function guidedPrompts(peg) {
+    return [
+      ["Vivid", "What does the <b>" + esc(peg) + "</b> look, smell or sound like, dialed to 200%?"],
+      ["Active", "Make the <b>" + esc(peg) + "</b> and the item collide — who does what to whom?"],
+      ["Memory", "Where is the item unmistakably in the picture?"]
+    ];
+  }
+
+  /* =====================================================================
+     6. Screens / rendering
+     ===================================================================== */
+  var $ = function (id) { return document.getElementById(id); };
+  var screens = { input: $("screen-input"), confirm: $("screen-confirm"), workspace: $("screen-workspace") };
+  function show(name) {
+    Object.keys(screens).forEach(function (k) { screens[k].classList.toggle("hidden", k !== name); });
+    window.scrollTo(0, 0);
+  }
+
+  var pendingRows = []; // {number, item} during confirm
+
+  // ---- Input screen ----
+  $("mode-seg").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b || b.disabled) return;
+    [].forEach.call(this.querySelectorAll("button"), function (x) { x.classList.remove("on"); });
+    b.classList.add("on");
+    state.settings.defaultMode = b.dataset.mode; save();
+  });
+
+  $("load-sample").addEventListener("click", function () {
+    $("input").value = SAMPLE.trim();
+    $("input-err").textContent = "";
+  });
+
+  $("to-confirm").addEventListener("click", function () {
+    var text = $("input").value;
+    if (!text.trim()) { $("input-err").textContent = "Paste or type a list first."; return; }
+    var res = looksLikeCSV(text) ? parseCSV(text) : parseList(text);
+    if (!res.items.length) { $("input-err").textContent = "I couldn't find any list items in that."; return; }
+    if (res.items.length > 200) { res.items = res.items.slice(0, 200); }
+    pendingRows = res.items;
+    $("input-err").textContent = "";
+    renderConfirm(res.autoNumbered, res.items.length > 100);
+    show("confirm");
+  });
+  function looksLikeCSV(text) {
+    var first = text.trim().split("\n")[0] || "";
+    return first.indexOf(",") !== -1 && !/^\s*\d{1,3}\s*[.)\-:]/.test(first);
+  }
+
+  // File upload / drop
+  var drop = $("drop"), fileInput = $("file");
+  fileInput.addEventListener("change", function () { if (this.files[0]) readFile(this.files[0]); });
+  ["dragover", "dragenter"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { var f = e.dataTransfer.files[0]; if (f) readFile(f); });
+  function readFile(f) {
+    var r = new FileReader();
+    r.onload = function () { $("input").value = String(r.result || ""); $("input-err").textContent = "Loaded " + f.name + ". Review and Continue."; };
+    r.readAsText(f);
+  }
+
+  // ---- Confirm screen ----
+  function renderConfirm(autoNumbered, over100) {
+    var body = $("confirm-body");
+    body.innerHTML = "";
+    pendingRows.forEach(function (row, idx) { body.appendChild(confirmRow(row, idx)); });
+    flagDuplicates();
+    var warn = $("confirm-warn"), msgs = [];
+    if (autoNumbered) msgs.push("No numbers found, so I numbered the lines in order.");
+    if (over100) msgs.push("That's over 100 items. Numbers past 100 have no shipped peg — you'll set those words yourself.");
+    if (msgs.length) { warn.innerHTML = msgs.join(" "); warn.classList.remove("hidden"); }
+    else warn.classList.add("hidden");
+  }
+  function confirmRow(row, idx) {
+    var tr = document.createElement("tr");
+    tr.dataset.idx = idx;
+    tr.innerHTML =
+      '<td><input class="numin mono" type="number" min="0" max="9999" value="' + row.number + '"></td>' +
+      '<td><input class="itemin" type="text" value="' + attr(row.item) + '"></td>' +
+      '<td><button class="btn-sm btn-ghost btn-danger del" title="Delete row">✕</button></td>';
+    tr.querySelector(".numin").addEventListener("input", function () { pendingRows[idx].number = parseInt(this.value, 10) || 0; flagDuplicates(); });
+    tr.querySelector(".itemin").addEventListener("input", function () { pendingRows[idx].item = this.value; });
+    tr.querySelector(".del").addEventListener("click", function () { pendingRows.splice(idx, 1); renderConfirm(false, false); });
+    return tr;
+  }
+  function flagDuplicates() {
+    var seen = {}, dups = {};
+    pendingRows.forEach(function (r) { if (seen[r.number]) dups[r.number] = true; seen[r.number] = true; });
+    [].forEach.call($("confirm-body").querySelectorAll("tr"), function (tr) {
+      var n = parseInt(tr.querySelector(".numin").value, 10);
+      tr.querySelector(".numin").classList.toggle("dup", !!dups[n]);
+    });
+    return Object.keys(dups);
+  }
+  $("add-row").addEventListener("click", function () {
+    var next = pendingRows.reduce(function (m, r) { return Math.max(m, r.number); }, 0) + 1;
+    pendingRows.push({ number: next, item: "" });
+    renderConfirm(false, false);
+  });
+  $("back-input").addEventListener("click", function () { show("input"); });
+  $("to-workspace").addEventListener("click", function () {
+    var dups = flagDuplicates();
+    if (dups.length) { toast("Resolve duplicate number " + dups.join(", ") + " first."); return; }
+    pendingRows = pendingRows.filter(function (r) { return r.item.trim(); });
+    if (!pendingRows.length) { toast("Add at least one item."); return; }
+    buildList();
+    show("workspace");
+  });
+
+  // ---- Build a working list from confirmed rows ----
+  function buildList() {
+    var mode = state.settings.defaultMode || "guided";
+    var items = pendingRows.map(function (r, i) {
+      return {
+        id: "i" + Date.now() + "_" + i,
+        number: r.number,
+        item: r.item.trim(),
+        mode: mode,
+        mnemonic: "",
+        needsPeg: pegFor(r.number) == null
+      };
+    });
+    state.current = { title: "Peg list", createdAt: new Date().toISOString(), items: items };
+    save();
+    renderWorkspace();
+  }
+
+  // ---- Workspace ----
+  function renderWorkspace() {
+    var list = state.current; if (!list) return;
+    $("ws-count").textContent = list.items.length + (list.items.length === 1 ? " item" : " items");
+    var body = $("ws-body");
+    body.innerHTML = "";
+    list.items.forEach(function (it) { body.appendChild(workspaceRow(it)); });
+  }
+
+  function workspaceRow(it) {
+    var peg = pegFor(it.number);
+    var div = document.createElement("div");
+    div.className = "item";
+    div.dataset.id = it.id;
+
+    var head = document.createElement("div");
+    head.className = "item-head";
+    var pegChip = peg
+      ? '<span class="peg-chip" title="' + attr(whyFor(it.number)) + '">' + esc(peg) + ' <span class="k">#' + it.number + '</span></span>'
+      : '<span class="peg-chip" title="No shipped peg above 100 — set your own word (sounds: ' + attr(whyFor(it.number)) + ')" style="border-color:var(--warn);color:var(--warn)">set peg <span class="k">#' + it.number + '</span></span>';
+    head.innerHTML =
+      '<span class="numbadge">' + it.number + '</span>' +
+      pegChip +
+      '<span class="item-title">' + esc(it.item) + '</span>' +
+      '<span class="item-actions">' +
+        '<button class="btn-sm btn-ghost edit-item" title="Edit item text">edit</button>' +
+      '</span>';
+    div.appendChild(head);
+
+    // peg setter for numbers > 100
+    if (!peg) {
+      var setter = document.createElement("div");
+      setter.className = "guided";
+      setter.innerHTML = '<label>Peg word for ' + it.number + ' (sounds: ' + esc(whyFor(it.number)) + ')</label>' +
+        '<input type="text" class="pegset" placeholder="a concrete word matching those sounds">';
+      setter.querySelector(".pegset").addEventListener("change", function () {
+        var v = this.value.trim();
+        if (v) { state.overrides[it.number] = v; it.needsPeg = false; save(); renderWorkspace(); }
+      });
+      div.appendChild(setter);
+    }
+
+    // guided writing area
+    var guided = document.createElement("div");
+    guided.className = "guided";
+    if (peg) {
+      var prompts = guidedPrompts(peg).map(function (p) {
+        return '<div class="prompt"><b>' + p[0] + ':</b> ' + p[1] + '</div>';
+      }).join("");
+      guided.innerHTML =
+        '<div class="prompts">' + prompts + '</div>' +
+        '<textarea class="mnem-input" rows="2" placeholder="One moving image: the ' + attr(peg) + ' does something violent and specific to the idea...">' + esc(it.mnemonic) + '</textarea>' +
+        '<div class="mnem-view" data-role="view" style="margin-top:8px"></div>' +
+        '<div class="vam" data-role="vam"></div>';
+      div.appendChild(guided);
+
+      var ta = guided.querySelector(".mnem-input");
+      var view = guided.querySelector('[data-role="view"]');
+      var vamEl = guided.querySelector('[data-role="vam"]');
+      function refresh() {
+        it.mnemonic = ta.value;
+        view.innerHTML = it.mnemonic ? renderMnem(it.mnemonic, peg) : "";
+        view.hidden = !it.mnemonic;
+        renderVAM(vamEl, checkVAM(it.mnemonic, it.item));
+      }
+      ta.addEventListener("input", refresh);
+      ta.addEventListener("change", save);
+      refresh();
+    }
+
+    // inline item edit
+    head.querySelector(".edit-item").addEventListener("click", function () {
+      var span = head.querySelector(".item-title");
+      var cur = it.item;
+      span.innerHTML = '<input type="text" class="edit-in" value="' + attr(cur) + '" style="width:100%">';
+      var inp = span.querySelector(".edit-in");
+      inp.focus();
+      function commit() { it.item = inp.value.trim() || cur; save(); renderWorkspace(); }
+      inp.addEventListener("blur", commit);
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") commit(); });
+    });
+
+    return div;
+  }
+
+  function renderVAM(el, vam) {
+    function pill(label, ok, tip) {
+      return '<span class="pill ' + (ok ? "pass" : "warn") + '" title="' + attr(tip) + '">' + label + '</span>';
+    }
+    el.innerHTML =
+      pill("Vivid", vam.vivid, vam.vivid ? "Sensory and exaggerated." : "Add color, size, sound or smell.") +
+      pill("Active", vam.active, vam.active ? "A strong action is happening." : "Make something crash, chase, or explode — not just sit.") +
+      pill("Memory", vam.memory, vam.memory ? "The idea is present in the image." : "Work the actual idea into the picture, not just the peg.");
+  }
+
+  // bold the peg word inside the mnemonic for display/export
+  function renderMnem(text, peg) {
+    return boldPeg(esc(text), peg);
+  }
+  function boldPeg(escaped, peg) {
+    if (!peg) return escaped;
+    var re = new RegExp("\\b(" + peg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")\\b", "ig");
+    return escaped.replace(re, "<b>$1</b>");
+  }
+
+  // ---- Toolbar actions ----
+  $("btn-new").addEventListener("click", function () {
+    if (!confirm("Start a new list? Your peg dictionary and overrides are kept; this working list is cleared.")) return;
+    state.current = null; save();
+    $("input").value = "";
+    show("input");
+  });
+  $("btn-copy").addEventListener("click", function () {
+    copyText(toMarkdown()).then(function () { toast("Copied as Markdown."); }, function () { toast("Copy failed."); });
+  });
+  $("btn-export").addEventListener("click", function () { downloadMd(); });
+  $("btn-print").addEventListener("click", function () { window.print(); });
+
+  /* =====================================================================
+     7. Export (Markdown in the Appendix C style) + copy/download
+     ===================================================================== */
+  function toMarkdown() {
+    var list = state.current; if (!list) return "";
+    var out = ["# " + (list.title || "Peg list"), ""];
+    list.items.forEach(function (it) {
+      var peg = pegFor(it.number) || "(set peg)";
+      out.push("* **" + it.number + ". " + it.item + " (" + cap(peg) + ")**");
+      var m = it.mnemonic ? boldPegMd(it.mnemonic, pegFor(it.number)) : "_(write your image)_";
+      out.push("  * *Mnemonic:* " + m);
+    });
+    out.push("");
+    return out.join("\n");
+  }
+  function boldPegMd(text, peg) {
+    if (!peg) return text;
+    var re = new RegExp("\\b(" + peg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")\\b", "ig");
+    // avoid double-bolding if user already used **
+    if (/\*\*/.test(text)) return text;
+    return text.replace(re, "**$1**");
+  }
+  function downloadMd() {
+    var blob = new Blob([toMarkdown()], { type: "text/markdown" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (state.current && state.current.title ? slug(state.current.title) : "peg-list") + ".md";
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+    toast("Downloaded .md");
+  }
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t);
+    return new Promise(function (res, rej) {
+      try {
+        var ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta);
+        ta.select(); document.execCommand("copy"); ta.remove(); res();
+      } catch (e) { rej(e); }
+    });
+  }
+
+  /* =====================================================================
+     8. Dictionary dialog (view/override/reset)
+     ===================================================================== */
+  var dictDlg = $("dict-dialog");
+  $("btn-dict").addEventListener("click", openDict);
+  $("dict-close").addEventListener("click", function () { closeDict(); });
+  dictDlg.addEventListener("click", function (e) { if (e.target === dictDlg) closeDict(); });
+  $("dict-filter").addEventListener("input", function () { renderDict(this.value); });
+  $("dict-reset").addEventListener("click", function () {
+    if (!confirm("Reset every peg to the shipped default? Your custom words will be removed.")) return;
+    state.overrides = {}; save(); renderDict($("dict-filter").value);
+    if (state.current) renderWorkspace();
+    toast("Pegs reset to defaults.");
+  });
+  function openDict() { renderDict(""); if (dictDlg.showModal) dictDlg.showModal(); else dictDlg.setAttribute("open", ""); }
+  function closeDict() { if (dictDlg.close) dictDlg.close(); else dictDlg.removeAttribute("open"); }
+  function renderDict(filter) {
+    var host = $("dict-list");
+    host.innerHTML = "";
+    filter = (filter || "").trim().toLowerCase();
+    for (var n = 0; n <= 100; n++) {
+      var word = pegFor(n) || "";
+      if (filter && String(n).indexOf(filter) === -1 && word.toLowerCase().indexOf(filter) === -1) continue;
+      host.appendChild(dictRow(n, word));
+    }
+  }
+  function dictRow(n, word) {
+    var custom = state.overrides[n] != null && state.overrides[n] !== "";
+    var row = document.createElement("div");
+    row.className = "dict-row";
+    row.innerHTML =
+      '<div class="n mono">' + n + '</div>' +
+      '<div><input type="text" value="' + attr(word) + '"><div class="dict-note muted"></div></div>' +
+      '<div>' + (custom ? '<button class="btn-sm btn-ghost revert">revert</button>' : '<span class="small muted" style="opacity:.6">default</span>') + '</div>';
+    var inp = row.querySelector("input");
+    var note = row.querySelector(".dict-note");
+    function validate() {
+      var v = inp.value.trim();
+      if (!v) { note.textContent = ""; return; }
+      // The shipped defaults are hand-curated and imageable; some use silent
+      // letters the approximate encoder can't judge. Only verdict a word the
+      // user actually changed - a default just shows its sound breakdown.
+      if (v === (DEFAULT_PEGS[n] || "")) { note.innerHTML = '<span class="muted">' + esc(whyFor(n)) + '</span>'; return; }
+      var got = wordToDigits(v), want = skeletonFor(n);
+      if (got === want) { note.innerHTML = '<span style="color:var(--ok)">matches ' + n + '</span> · ' + esc(whyFor(n)); }
+      else { note.innerHTML = '<span style="color:var(--warn)">encodes ' + (got || "—") + ', not ' + n + '</span> · allowed, it\'s your system'; }
+    }
+    inp.addEventListener("input", validate);
+    inp.addEventListener("change", function () {
+      var v = inp.value.trim();
+      if (!v || v === DEFAULT_PEGS[n]) { delete state.overrides[n]; }
+      else { state.overrides[n] = v; }
+      save();
+      if (state.current) renderWorkspace();
+      renderDict($("dict-filter").value);
+    });
+    var rev = row.querySelector(".revert");
+    if (rev) rev.addEventListener("click", function () {
+      delete state.overrides[n]; save();
+      if (state.current) renderWorkspace();
+      renderDict($("dict-filter").value);
+    });
+    validate();
+    return row;
+  }
+
+  /* =====================================================================
+     9. Small helpers
+     ===================================================================== */
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function attr(s) { return esc(s).replace(/"/g, "&quot;"); }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "peg-list"; }
+  var toastTimer;
+  function toast(msg) {
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2200);
+  }
+
+  var SAMPLE = "\
+1. Markets for Goods & Services\n\
+2. Scarcity\n\
+3. Opportunity Cost\n\
+4. Supply and Demand\n\
+5. Equilibrium Price\n\
+6. Elasticity\n\
+7. Marginal Utility\n\
+8. Comparative Advantage\n\
+9. Gross Domestic Product\n\
+10. Inflation\n\
+11. Unemployment\n\
+12. Fiscal Policy\n\
+13. Monetary Policy\n\
+14. Interest Rates\n\
+15. Externalities\n\
+16. Public Goods\n\
+17. Monopoly\n\
+18. Perfect Competition\n\
+19. Game Theory\n\
+20. Comparative Statics";
+
+  /* =====================================================================
+     10. Boot - restore in-progress list (spec acceptance #7)
+     ===================================================================== */
+  (function boot() {
+    // reflect saved default mode in the toggle
+    var mode = state.settings.defaultMode || "guided";
+    [].forEach.call($("mode-seg").querySelectorAll("button"), function (b) {
+      b.classList.toggle("on", b.dataset.mode === mode && !b.disabled);
+    });
+    if (state.current && state.current.items && state.current.items.length) {
+      renderWorkspace();
+      show("workspace");
+    } else {
+      show("input");
+    }
+  })();
+
+})();
+</script>
+</body>
+</html>
